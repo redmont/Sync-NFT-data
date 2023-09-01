@@ -174,8 +174,8 @@ const getMetaDataForAllTokens = async (tokens) => {
 
       if (metadataUrl.startsWith('data:application/json;base64,')) {
         metadata = JSON.parse(Buffer.from(metadataUrl.split(',')[1], 'base64').toString());
-      } else if (metadataUrl.startsWith('data:application/json;utf8,')) {
-        metadata = JSON.parse(metadataUrl.split(',')[1]);
+      } else if (metadataUrl.startsWith('data:application/json')) {
+        metadata = JSON.parse(metadataUrl.slice(metadataUrl.indexOf('{')));
       } else if (metadataUrl.startsWith('ipfs://')) {
         metadataUrl = metadataUrl.replace('ipfs://', 'https://ipfs.io/ipfs/');
         const metadataResponse = await fetch(metadataUrl, options);
@@ -184,6 +184,7 @@ const getMetaDataForAllTokens = async (tokens) => {
         const metadataResponse = await fetch(metadataUrl, options);
         metadata = await metadataResponse.json();
       } else {
+        console.log(token.metaDataURL);
         return { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, error: true };
       }
 
