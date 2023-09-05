@@ -232,15 +232,16 @@ var fetchDataFromOS = function (collection, id, retry) {
     if (retry === void 0) { retry = 0; }
     return __awaiter(void 0, void 0, void 0, function () {
         var url, options_1, resp, nft, error_3;
-        return __generator(this, function (_a) {
-            switch (_a.label) {
+        var _a;
+        return __generator(this, function (_b) {
+            switch (_b.label) {
                 case 0:
                     if (retry > 2) {
                         return [2 /*return*/, false];
                     }
-                    _a.label = 1;
+                    _b.label = 1;
                 case 1:
-                    _a.trys.push([1, 4, , 7]);
+                    _b.trys.push([1, 4, , 7]);
                     url = "https://api.opensea.io/v2/chain/ethereum/contract/".concat(collection, "/nfts/").concat(id);
                     options_1 = {
                         method: 'GET',
@@ -248,18 +249,18 @@ var fetchDataFromOS = function (collection, id, retry) {
                     };
                     return [4 /*yield*/, (0, node_fetch_1.default)(url, options_1)];
                 case 2:
-                    resp = _a.sent();
+                    resp = _b.sent();
                     return [4 /*yield*/, resp.json()];
                 case 3:
-                    nft = _a.sent();
-                    return [2 /*return*/, nft === null || nft === void 0 ? void 0 : nft.traits];
+                    nft = _b.sent();
+                    return [2 /*return*/, (_a = nft === null || nft === void 0 ? void 0 : nft.nft) === null || _a === void 0 ? void 0 : _a.traits];
                 case 4:
-                    error_3 = _a.sent();
+                    error_3 = _b.sent();
                     return [4 /*yield*/, new Promise(function (resolve) { return setTimeout(resolve, 2000); })];
                 case 5:
-                    _a.sent();
+                    _b.sent();
                     return [4 /*yield*/, fetchDataFromOS(collection, id, retry + 1)];
-                case 6: return [2 /*return*/, _a.sent()];
+                case 6: return [2 /*return*/, _b.sent()];
                 case 7: return [2 /*return*/];
             }
         });

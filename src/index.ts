@@ -170,7 +170,7 @@ const fetchDataFromOS = async (collection, id, retry = 0) => {
     };
     const resp = await fetch(url, options);
     const nft = await resp.json();
-    return nft?.traits;
+    return nft?.nft?.traits;
   } catch (error) {
     await new Promise((resolve) => setTimeout(resolve, 2000));
     return await fetchDataFromOS(collection, id, retry + 1);
