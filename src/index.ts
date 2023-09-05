@@ -1,5 +1,6 @@
 const providerUrl = process.env.ALCHEMY_URL;
 const apiKey = process.env.RESERVOIR_API_KEY;
+const osKey = process.env.OS_KEY;
 let uri = process.env.mongoURL || 'mongodb://localhost:27017';
 
 const { addresses } = require('../data/nft_to_collect.json');
@@ -165,7 +166,7 @@ const fetchDataFromOS = async (collection, id, retry = 0) => {
     const url = `https://api.opensea.io/v2/chain/ethereum/contract/${collection}/nfts/${id}`;
     const options = {
       method: 'GET',
-      headers: { accept: 'application/json', 'X-API-KEY': process.env.OS_KEY },
+      headers: { accept: 'application/json', 'X-API-KEY': osKey },
     };
     const resp = await fetch(url, options);
     const nft = await resp.json();
