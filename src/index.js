@@ -733,6 +733,7 @@ function executeAndMeasureTime(fn, fnArgs, label) {
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
+                console.log("BATCH_SIZE=".concat(db.BATCH_SIZE, ", BATCH_SAVE_SIZE=").concat(db.BATCH_SAVE_SIZE, ", WAIT_TIME=").concat(db.WAIT_TIME, ", ERROR_MODE=").concat(db.ERROR_MODE, ", DATA_MODE=").concat(db.DATA_MODE));
                 monitorMemoryUsage();
                 if (!db.FETCH_COLLECTIONS) return [3 /*break*/, 2];
                 return [4 /*yield*/, fetchCollectionInfo()];

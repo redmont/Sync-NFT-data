@@ -496,6 +496,7 @@ async function executeAndMeasureTime(fn, fnArgs, label) {
 }
 
 (async () => {
+  console.log(`BATCH_SIZE=${db.BATCH_SIZE}, BATCH_SAVE_SIZE=${db.BATCH_SAVE_SIZE}, WAIT_TIME=${db.WAIT_TIME}, ERROR_MODE=${db.ERROR_MODE}, DATA_MODE=${db.DATA_MODE}`);
   monitorMemoryUsage();
 
   if (db.FETCH_COLLECTIONS) {
