@@ -15,9 +15,10 @@ const db = {
   TRAITS: mongoClient.db('BOT_NFT').collection('NFT_DATA2'),
 
   ERROR_MODE: !!process.env.ERROR_MODE || false,
-  DATA_MODE: process.env.DATAMODE, // ipfs, http or ''
+  DATA_MODE: process.env.DATA_MODE, // ipfs, http or ''
 
   BATCH_SIZE: Number(process.env.BATCH_SIZE) || 200,
+  BATCH_SAVE_SIZE: Number(process.env.BATCH_SAVE_SIZE) || 3000,
   WAIT_TIME: Number(process.env.WAIT_TIME) || 300,
 
   FETCH_COLLECTIONS: process.env.FETCH_COLLECTIONS,
@@ -156,6 +157,25 @@ const getMetaDataForContract = async (contractAddr: string, tokens: any[], isERC
   return results;
 };
 
+const fetchDataFromOS = async (collection, id, retry = 0) => {
+  if (retry > 2) {
+    return false;
+  }
+  try {
+    const url = `https://api.opensea.io/v2/chain/ethereum/contract/${collection}/nfts/${id}`;
+    const options = {
+      method: 'GET',
+      headers: { accept: 'application/json', 'X-API-KEY': process.env.OS_KEY },
+    };
+    const resp = await fetch(url, options);
+    const nft = await resp.json();
+    return nft?.traits;
+  } catch (error) {
+    await new Promise((resolve) => setTimeout(resolve, 2000));
+    return await fetchDataFromOS(collection, id, retry + 1);
+  }
+};
+
 const getMetaDataForAllTokens = async (tokens) => {
   const MAX_RETRIES = 2;
   const WAIT_TIME = db.WAIT_TIME;
@@ -180,18 +200,38 @@ const getMetaDataForAllTokens = async (tokens) => {
         metadataUrl = metadataUrl.replace('ipfs://', 'https://ipfs.io/ipfs/');
         const metadataResponse = await fetch(metadataUrl, options);
         metadata = await metadataResponse.json();
+      } else if (metadataUrl.startsWith('ar://')) {
+        metadataUrl = metadataUrl.replace('ar://', 'https://arweave.net/');
+        const metadataResponse = await fetch(metadataUrl, options);
+        metadata = await metadataResponse.json();
       } else if (metadataUrl.startsWith('http')) {
         const metadataResponse = await fetch(metadataUrl, options);
         metadata = await metadataResponse.json();
       } else {
-        console.log(token.metaDataURL);
-        return { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, error: true };
+        try {
+          const traits = await fetchDataFromOS(token.addr_tkn, token.id_tkn);
+          if (traits === false) {
+            throw 'os traits error';
+          }
+          return { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, metadata: formatMetadata({ attributes: traits }), error: false };
+        } catch (error) {
+          console.log(error);
+          return { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, error: true, url: token.metaDataURL };
+        }
       }
 
       return { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, metadata: formatMetadata(metadata), error: false };
     } catch (error) {
-      if (retry < MAX_RETRIES) return fetchMetadata(token, options, retry + 1);
-      return { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, error: true, url: token.metaDataURL };
+      try {
+        const traits = await fetchDataFromOS(token.addr_tkn, token.id_tkn);
+        if (traits === false) {
+          throw 'os traits error';
+        }
+        return { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, metadata: formatMetadata({ attributes: traits }), error: false };
+      } catch (error) {
+        console.log(error);
+        return { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, error: true, url: token.metaDataURL };
+      }
     }
   };
   const options = { timeout: 8000 };
@@ -300,13 +340,22 @@ const getMetadataURL = async (nftCollections) => {
 
   const getMetadataForBatch = async (addr_tkn, tokens, isERC721) => {
     const results = await getMetaDataForContract(addr_tkn, tokens, isERC721);
-    return tokens.map((token) => ({
-      updateOne: {
-        filter: { addr_tkn, id_tkn: token },
-        update: { $set: { metaDataURL: results[token]?.callsReturnContext[0]?.returnValues[0] } },
-        upsert: false,
-      },
-    }));
+    return tokens.map((token) => {
+      const url = results[token]?.callsReturnContext[0]?.returnValues[0];
+      let update;
+      if (url) {
+        update = { $set: { metaDataURL: url } };
+      } else {
+        update = { $set: { collection_problem: true } };
+      }
+      return {
+        updateOne: {
+          filter: { addr_tkn, id_tkn: token },
+          update: update,
+          upsert: false,
+        },
+      };
+    });
   };
 
   for (const collectionId of nftCollections) {
@@ -355,7 +404,7 @@ const getMetadataURL = async (nftCollections) => {
 };
 
 const getMetadataFromURL = async () => {
-  const BATCH_SIZE = 5000;
+  const BATCH_SIZE = db.BATCH_SAVE_SIZE;
 
   const buildQuery = (dataMode: string, errorMode: boolean): any => {
     const query: any = { $and: [] };

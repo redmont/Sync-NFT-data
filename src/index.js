@@ -58,8 +58,9 @@ var db = {
     NFT: mongoClient.db('BOT_NFT').collection('NFT2'),
     TRAITS: mongoClient.db('BOT_NFT').collection('NFT_DATA2'),
     ERROR_MODE: !!process.env.ERROR_MODE || false,
-    DATA_MODE: process.env.DATAMODE,
+    DATA_MODE: process.env.DATA_MODE,
     BATCH_SIZE: Number(process.env.BATCH_SIZE) || 200,
+    BATCH_SAVE_SIZE: Number(process.env.BATCH_SAVE_SIZE) || 3000,
     WAIT_TIME: Number(process.env.WAIT_TIME) || 300,
     FETCH_COLLECTIONS: process.env.FETCH_COLLECTIONS,
     FETCH_TOKENS: process.env.FETCH_TOKENS,
@@ -226,6 +227,43 @@ var getMetaDataForContract = function (contractAddr, tokens, isERC721) { return 
         }
     });
 }); };
+var fetchDataFromOS = function (collection, id, retry) {
+    if (retry === void 0) { retry = 0; }
+    return __awaiter(void 0, void 0, void 0, function () {
+        var url, options_1, resp, nft, error_3;
+        return __generator(this, function (_a) {
+            switch (_a.label) {
+                case 0:
+                    if (retry > 2) {
+                        return [2 /*return*/, false];
+                    }
+                    _a.label = 1;
+                case 1:
+                    _a.trys.push([1, 4, , 7]);
+                    url = "https://api.opensea.io/v2/chain/ethereum/contract/".concat(collection, "/nfts/").concat(id);
+                    options_1 = {
+                        method: 'GET',
+                        headers: { accept: 'application/json', 'X-API-KEY': process.env.OS_KEY },
+                    };
+                    return [4 /*yield*/, (0, node_fetch_1.default)(url, options_1)];
+                case 2:
+                    resp = _a.sent();
+                    return [4 /*yield*/, resp.json()];
+                case 3:
+                    nft = _a.sent();
+                    return [2 /*return*/, nft === null || nft === void 0 ? void 0 : nft.traits];
+                case 4:
+                    error_3 = _a.sent();
+                    return [4 /*yield*/, new Promise(function (resolve) { return setTimeout(resolve, 2000); })];
+                case 5:
+                    _a.sent();
+                    return [4 /*yield*/, fetchDataFromOS(collection, id, retry + 1)];
+                case 6: return [2 /*return*/, _a.sent()];
+                case 7: return [2 /*return*/];
+            }
+        });
+    });
+};
 var getMetaDataForAllTokens = function (tokens) { return __awaiter(void 0, void 0, void 0, function () {
     var MAX_RETRIES, WAIT_TIME, BATCH_SIZE, formatMetadata, fetchMetadata, options, maxTokensPerBatch, results, errCount, successCount, tokensBackup, batch, batchResults, errResults;
     var _a;
@@ -243,20 +281,20 @@ var getMetaDataForAllTokens = function (tokens) { return __awaiter(void 0, void 
                 fetchMetadata = function (token, options, retry) {
                     if (retry === void 0) { retry = 0; }
                     return __awaiter(void 0, void 0, void 0, function () {
-                        var metadata, metadataUrl, metadataResponse, metadataResponse, error_3;
+                        var metadata, metadataUrl, metadataResponse, metadataResponse, metadataResponse, traits, error_4, error_5, traits, error_6;
                         return __generator(this, function (_a) {
                             switch (_a.label) {
                                 case 0:
-                                    _a.trys.push([0, 10, , 11]);
+                                    _a.trys.push([0, 15, , 20]);
                                     metadata = void 0;
                                     metadataUrl = token.metaDataURL;
                                     if (!metadataUrl.startsWith('data:application/json;base64,')) return [3 /*break*/, 1];
                                     metadata = JSON.parse(Buffer.from(metadataUrl.split(',')[1], 'base64').toString());
-                                    return [3 /*break*/, 9];
+                                    return [3 /*break*/, 14];
                                 case 1:
-                                    if (!metadataUrl.startsWith('data:application/json;utf8,')) return [3 /*break*/, 2];
-                                    metadata = JSON.parse(metadataUrl.split(',')[1]);
-                                    return [3 /*break*/, 9];
+                                    if (!metadataUrl.startsWith('data:application/json')) return [3 /*break*/, 2];
+                                    metadata = JSON.parse(metadataUrl.slice(metadataUrl.indexOf('{')));
+                                    return [3 /*break*/, 14];
                                 case 2:
                                     if (!metadataUrl.startsWith('ipfs://')) return [3 /*break*/, 5];
                                     metadataUrl = metadataUrl.replace('ipfs://', 'https://ipfs.io/ipfs/');
@@ -266,24 +304,58 @@ var getMetaDataForAllTokens = function (tokens) { return __awaiter(void 0, void 
                                     return [4 /*yield*/, metadataResponse.json()];
                                 case 4:
                                     metadata = _a.sent();
-                                    return [3 /*break*/, 9];
+                                    return [3 /*break*/, 14];
                                 case 5:
-                                    if (!metadataUrl.startsWith('http')) return [3 /*break*/, 8];
+                                    if (!metadataUrl.startsWith('ar://')) return [3 /*break*/, 8];
+                                    metadataUrl = metadataUrl.replace('ar://', 'https://arweave.net/');
                                     return [4 /*yield*/, (0, node_fetch_1.default)(metadataUrl, options)];
                                 case 6:
                                     metadataResponse = _a.sent();
                                     return [4 /*yield*/, metadataResponse.json()];
                                 case 7:
                                     metadata = _a.sent();
-                                    return [3 /*break*/, 9];
-                                case 8: return [2 /*return*/, { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, error: true }];
-                                case 9: return [2 /*return*/, { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, metadata: formatMetadata(metadata), error: false }];
+                                    return [3 /*break*/, 14];
+                                case 8:
+                                    if (!metadataUrl.startsWith('http')) return [3 /*break*/, 11];
+                                    return [4 /*yield*/, (0, node_fetch_1.default)(metadataUrl, options)];
+                                case 9:
+                                    metadataResponse = _a.sent();
+                                    return [4 /*yield*/, metadataResponse.json()];
                                 case 10:
-                                    error_3 = _a.sent();
-                                    if (retry < MAX_RETRIES)
-                                        return [2 /*return*/, fetchMetadata(token, options, retry + 1)];
+                                    metadata = _a.sent();
+                                    return [3 /*break*/, 14];
+                                case 11:
+                                    _a.trys.push([11, 13, , 14]);
+                                    return [4 /*yield*/, fetchDataFromOS(token.addr_tkn, token.id_tkn)];
+                                case 12:
+                                    traits = _a.sent();
+                                    if (traits === false) {
+                                        throw 'os traits error';
+                                    }
+                                    return [2 /*return*/, { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, metadata: formatMetadata({ attributes: traits }), error: false }];
+                                case 13:
+                                    error_4 = _a.sent();
+                                    console.log(error_4);
                                     return [2 /*return*/, { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, error: true, url: token.metaDataURL }];
-                                case 11: return [2 /*return*/];
+                                case 14: return [2 /*return*/, { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, metadata: formatMetadata(metadata), error: false }];
+                                case 15:
+                                    error_5 = _a.sent();
+                                    _a.label = 16;
+                                case 16:
+                                    _a.trys.push([16, 18, , 19]);
+                                    return [4 /*yield*/, fetchDataFromOS(token.addr_tkn, token.id_tkn)];
+                                case 17:
+                                    traits = _a.sent();
+                                    if (traits === false) {
+                                        throw 'os traits error';
+                                    }
+                                    return [2 /*return*/, { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, metadata: formatMetadata({ attributes: traits }), error: false }];
+                                case 18:
+                                    error_6 = _a.sent();
+                                    console.log(error_6);
+                                    return [2 /*return*/, { addr_tkn: token.addr_tkn, id_tkn: token.id_tkn, error: true, url: token.metaDataURL }];
+                                case 19: return [3 /*break*/, 20];
+                                case 20: return [2 /*return*/];
                             }
                         });
                     });
@@ -426,7 +498,7 @@ var getTokens = function (nftCollections) { return __awaiter(void 0, void 0, voi
     });
 }); };
 var getMetadataURL = function (nftCollections) { return __awaiter(void 0, void 0, void 0, function () {
-    var bulkOps, BATCH_SIZE, getMetadataForBatch, _i, nftCollections_1, collectionId, collection, totalInNftData, isERC721, startTime, count, query, total, tokens, tokenIds, endTime, timeDifference, error_4;
+    var bulkOps, BATCH_SIZE, getMetadataForBatch, _i, nftCollections_1, collectionId, collection, totalInNftData, isERC721, startTime, count, query, total, tokens, tokenIds, endTime, timeDifference, error_7;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
@@ -441,13 +513,21 @@ var getMetadataURL = function (nftCollections) { return __awaiter(void 0, void 0
                                 results = _a.sent();
                                 return [2 /*return*/, tokens.map(function (token) {
                                         var _a, _b;
-                                        return ({
+                                        var url = (_b = (_a = results[token]) === null || _a === void 0 ? void 0 : _a.callsReturnContext[0]) === null || _b === void 0 ? void 0 : _b.returnValues[0];
+                                        var update;
+                                        if (url) {
+                                            update = { $set: { metaDataURL: url } };
+                                        }
+                                        else {
+                                            update = { $set: { collection_problem: true } };
+                                        }
+                                        return {
                                             updateOne: {
                                                 filter: { addr_tkn: addr_tkn, id_tkn: token },
-                                                update: { $set: { metaDataURL: (_b = (_a = results[token]) === null || _a === void 0 ? void 0 : _a.callsReturnContext[0]) === null || _b === void 0 ? void 0 : _b.returnValues[0] } },
+                                                update: update,
                                                 upsert: false,
                                             },
-                                        });
+                                        };
                                     })];
                         }
                     });
@@ -507,8 +587,8 @@ var getMetadataURL = function (nftCollections) { return __awaiter(void 0, void 0
                 return [3 /*break*/, 6];
             case 10: return [3 /*break*/, 12];
             case 11:
-                error_4 = _a.sent();
-                console.log("Error for ".concat(collectionId), error_4);
+                error_7 = _a.sent();
+                console.log("Error for ".concat(collectionId), error_7);
                 return [3 /*break*/, 12];
             case 12:
                 _i++;
@@ -518,11 +598,11 @@ var getMetadataURL = function (nftCollections) { return __awaiter(void 0, void 0
     });
 }); };
 var getMetadataFromURL = function () { return __awaiter(void 0, void 0, void 0, function () {
-    var BATCH_SIZE, buildQuery, processBatch, dataMode, errorMode, query, total, skip, cursor, error_5;
+    var BATCH_SIZE, buildQuery, processBatch, dataMode, errorMode, query, total, skip, cursor, error_8;
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
-                BATCH_SIZE = 5000;
+                BATCH_SIZE = db.BATCH_SAVE_SIZE;
                 buildQuery = function (dataMode, errorMode) {
                     var query = { $and: [] };
                     if (dataMode) {
@@ -602,8 +682,8 @@ var getMetadataFromURL = function () { return __awaiter(void 0, void 0, void 0, 
                 return [3 /*break*/, 3];
             case 5: return [3 /*break*/, 7];
             case 6:
-                error_5 = _a.sent();
-                console.error('An error occurred:', error_5);
+                error_8 = _a.sent();
+                console.error('An error occurred:', error_8);
                 return [3 /*break*/, 7];
             case 7: return [2 /*return*/];
         }
