@@ -47,6 +47,7 @@ var __spreadArray = (this && this.__spreadArray) || function (to, from, pack) {
 Object.defineProperty(exports, "__esModule", { value: true });
 var providerUrl = process.env.ALCHEMY_URL;
 var apiKey = process.env.RESERVOIR_API_KEY;
+var osKey = process.env.OS_KEY;
 var uri = process.env.mongoURL || 'mongodb://localhost:27017';
 var addresses = require('../data/nft_to_collect.json').addresses;
 var node_fetch_1 = require("node-fetch");
@@ -243,7 +244,7 @@ var fetchDataFromOS = function (collection, id, retry) {
                     url = "https://api.opensea.io/v2/chain/ethereum/contract/".concat(collection, "/nfts/").concat(id);
                     options_1 = {
                         method: 'GET',
-                        headers: { accept: 'application/json', 'X-API-KEY': process.env.OS_KEY },
+                        headers: { accept: 'application/json', 'X-API-KEY': osKey },
                     };
                     return [4 /*yield*/, (0, node_fetch_1.default)(url, options_1)];
                 case 2:
