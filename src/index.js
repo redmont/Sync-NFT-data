@@ -51,11 +51,14 @@ var osKey = process.env.OS_KEY;
 var uri = process.env.mongoURL || 'mongodb://localhost:27017';
 var addresses = require('../data/nft_to_collect.json').addresses;
 var node_fetch_1 = require("node-fetch");
+var _a = require('@opensea/stream-js'), OpenSeaStreamClient = _a.OpenSeaStreamClient, EventType = _a.EventType, Network = _a.Network;
+var WebSocket = require('ws').WebSocket;
 var ethereum_multicall_1 = require("ethereum-multicall");
 require('events').EventEmitter.defaultMaxListeners = process.env.defaultMaxListeners || 10000;
 var MongoClient = require('mongodb').MongoClient;
 var mongoClient = new MongoClient(uri);
 var db = {
+    OS_SUB_EVENTS: [EventType.ITEM_METADATA_UPDATED],
     NFT: mongoClient.db('BOT_NFT').collection('NFT2'),
     TRAITS: mongoClient.db('BOT_NFT').collection('NFT_DATA2'),
     ERROR_MODE: !!process.env.ERROR_MODE || false,
@@ -68,6 +71,13 @@ var db = {
     FETCH_METADATA_URL: process.env.FETCH_METADATA_URL,
     FETCH_METADATA: process.env.FETCH_METADATA,
 };
+var osClient = new OpenSeaStreamClient({
+    token: process.env.OS_KEY,
+    networkName: Network.MAINNET,
+    connectOptions: {
+        transport: WebSocket,
+    },
+});
 var multicall = new ethereum_multicall_1.Multicall({ nodeUrl: providerUrl, tryAggregate: true });
 var contractABI = {
     erc721: [
@@ -265,8 +275,23 @@ var fetchDataFromOS = function (collection, id, retry) {
         });
     });
 };
+var formatMetadata = function (metadata) {
+    if (Array.isArray(metadata)) {
+        return metadata.map(function (attr) { return ({
+            trait_key: attr.trait_type,
+            trait_value: attr.value,
+        }); });
+    }
+    if ((metadata === null || metadata === void 0 ? void 0 : metadata.attributes) && typeof metadata.attributes === 'object') {
+        return Object.keys(metadata.attributes).map(function (key) { return ({
+            trait_key: key,
+            trait_value: metadata.attributes[key],
+        }); });
+    }
+    return [];
+};
 var getMetaDataForAllTokens = function (tokens) { return __awaiter(void 0, void 0, void 0, function () {
-    var MAX_RETRIES, WAIT_TIME, BATCH_SIZE, formatMetadata, fetchMetadata, options, maxTokensPerBatch, results, errCount, successCount, tokensBackup, batch, batchResults, errResults;
+    var MAX_RETRIES, WAIT_TIME, BATCH_SIZE, fetchMetadata, options, maxTokensPerBatch, results, errCount, successCount, tokensBackup, batch, batchResults, errResults;
     var _a;
     return __generator(this, function (_b) {
         switch (_b.label) {
@@ -274,11 +299,6 @@ var getMetaDataForAllTokens = function (tokens) { return __awaiter(void 0, void 
                 MAX_RETRIES = 2;
                 WAIT_TIME = db.WAIT_TIME;
                 BATCH_SIZE = db.BATCH_SIZE;
-                formatMetadata = function (metadata) {
-                    if (!metadata.attributes || typeof metadata.attributes !== 'object')
-                        return [];
-                    return Array.isArray(metadata.attributes) ? metadata.attributes.map(function (attr) { return (attr.trait_type && attr.value ? { trait_key: attr.trait_type, trait_value: attr.value } : attr); }) : Object.keys(metadata.attributes).map(function (key) { return ({ trait_key: key, trait_value: metadata.attributes[key] }); });
-                };
                 fetchMetadata = function (token, options, retry) {
                     if (retry === void 0) { retry = 0; }
                     return __awaiter(void 0, void 0, void 0, function () {
@@ -729,12 +749,49 @@ function executeAndMeasureTime(fn, fnArgs, label) {
         });
     });
 }
+var subMetaDataUpdate = function () { return __awaiter(void 0, void 0, void 0, function () {
+    return __generator(this, function (_a) {
+        osClient.onEvents('*', db.OS_SUB_EVENTS, function (event) { return __awaiter(void 0, void 0, void 0, function () {
+            var metadata, nftId, info, _a, addr_tkn, id_tkn, traits, e_1;
+            return __generator(this, function (_b) {
+                switch (_b.label) {
+                    case 0:
+                        _b.trys.push([0, 3, , 4]);
+                        metadata = event.payload.item.metadata;
+                        nftId = event.payload.item.nft_id;
+                        info = nftId.slice(nftId.indexOf('/') + 1);
+                        _a = info.split('/'), addr_tkn = _a[0], id_tkn = _a[1];
+                        traits = formatMetadata(metadata.traits);
+                        if (!(traits.length > 0)) return [3 /*break*/, 2];
+                        return [4 /*yield*/, db.TRAITS.updateOne({ addr_tkn: addr_tkn, id_tkn: id_tkn }, {
+                                $set: {
+                                    traits: traits,
+                                    metaDataURL: metadata.metadata_url,
+                                    error: false,
+                                    updatedAt: new Date(),
+                                },
+                            }, { upsert: true })];
+                    case 1:
+                        _b.sent();
+                        _b.label = 2;
+                    case 2: return [3 /*break*/, 4];
+                    case 3:
+                        e_1 = _b.sent();
+                        return [3 /*break*/, 4];
+                    case 4: return [2 /*return*/];
+                }
+            });
+        }); });
+        return [2 /*return*/];
+    });
+}); };
 (function () { return __awaiter(void 0, void 0, void 0, function () {
     return __generator(this, function (_a) {
         switch (_a.label) {
             case 0:
                 console.log("BATCH_SIZE=".concat(db.BATCH_SIZE, ", BATCH_SAVE_SIZE=").concat(db.BATCH_SAVE_SIZE, ", WAIT_TIME=").concat(db.WAIT_TIME, ", ERROR_MODE=").concat(db.ERROR_MODE, ", DATA_MODE=").concat(db.DATA_MODE));
                 monitorMemoryUsage();
+                subMetaDataUpdate();
                 if (!db.FETCH_COLLECTIONS) return [3 /*break*/, 2];
                 return [4 /*yield*/, fetchCollectionInfo()];
             case 1:

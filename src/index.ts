@@ -6,12 +6,16 @@ let uri = process.env.mongoURL || 'mongodb://localhost:27017';
 const { addresses } = require('../data/nft_to_collect.json');
 
 import fetch from 'node-fetch';
+const { OpenSeaStreamClient, EventType, Network } = require('@opensea/stream-js');
+const { WebSocket } = require('ws');
 import { Multicall, ContractCallResults, ContractCallContext } from 'ethereum-multicall';
 require('events').EventEmitter.defaultMaxListeners = process.env.defaultMaxListeners || 10000;
 const { MongoClient } = require('mongodb');
 const mongoClient = new MongoClient(uri);
 
 const db = {
+  OS_SUB_EVENTS: [EventType.ITEM_METADATA_UPDATED],
+
   NFT: mongoClient.db('BOT_NFT').collection('NFT2'),
   TRAITS: mongoClient.db('BOT_NFT').collection('NFT_DATA2'),
 
@@ -27,6 +31,14 @@ const db = {
   FETCH_METADATA_URL: process.env.FETCH_METADATA_URL,
   FETCH_METADATA: process.env.FETCH_METADATA,
 };
+
+const osClient = new OpenSeaStreamClient({
+  token: process.env.OS_KEY,
+  networkName: Network.MAINNET,
+  connectOptions: {
+    transport: WebSocket,
+  },
+});
 
 const multicall = new Multicall({ nodeUrl: providerUrl, tryAggregate: true });
 
@@ -176,17 +188,27 @@ const fetchDataFromOS = async (collection, id, retry = 0) => {
     return await fetchDataFromOS(collection, id, retry + 1);
   }
 };
+const formatMetadata = (metadata) => {
+  if (Array.isArray(metadata)) {
+    return metadata.map((attr) => ({
+      trait_key: attr.trait_type,
+      trait_value: attr.value,
+    }));
+  }
+
+  if (metadata?.attributes && typeof metadata.attributes === 'object') {
+    return Object.keys(metadata.attributes).map((key) => ({
+      trait_key: key,
+      trait_value: metadata.attributes[key],
+    }));
+  }
+  return [];
+};
 
 const getMetaDataForAllTokens = async (tokens) => {
   const MAX_RETRIES = 2;
   const WAIT_TIME = db.WAIT_TIME;
   const BATCH_SIZE = db.BATCH_SIZE;
-
-  const formatMetadata = (metadata) => {
-    if (!metadata.attributes || typeof metadata.attributes !== 'object') return [];
-
-    return Array.isArray(metadata.attributes) ? metadata.attributes.map((attr) => (attr.trait_type && attr.value ? { trait_key: attr.trait_type, trait_value: attr.value } : attr)) : Object.keys(metadata.attributes).map((key) => ({ trait_key: key, trait_value: metadata.attributes[key] }));
-  };
 
   const fetchMetadata = async (token, options, retry = 0) => {
     try {
@@ -495,22 +517,48 @@ async function executeAndMeasureTime(fn, fnArgs, label) {
   console.log(`${label}: `, timeDifference);
 }
 
+const subMetaDataUpdate = async () => {
+  osClient.onEvents('*', db.OS_SUB_EVENTS, async (event) => {
+    try {
+      const metadata = event.payload.item.metadata;
+      const nftId = event.payload.item.nft_id;
+      const info = nftId.slice(nftId.indexOf('/') + 1);
+      const [addr_tkn, id_tkn] = info.split('/');
+
+      const traits = formatMetadata(metadata.traits);
+      if (traits.length > 0) {
+        await db.TRAITS.updateOne(
+          { addr_tkn: addr_tkn, id_tkn: id_tkn },
+          {
+            $set: {
+              traits: traits,
+              metaDataURL: metadata.metadata_url,
+              error: false,
+              updatedAt: new Date(),
+            },
+          },
+          { upsert: true }
+        );
+      }
+    } catch (e) {}
+  });
+};
+
 (async () => {
   console.log(`BATCH_SIZE=${db.BATCH_SIZE}, BATCH_SAVE_SIZE=${db.BATCH_SAVE_SIZE}, WAIT_TIME=${db.WAIT_TIME}, ERROR_MODE=${db.ERROR_MODE}, DATA_MODE=${db.DATA_MODE}`);
   monitorMemoryUsage();
 
+  subMetaDataUpdate();
+
   if (db.FETCH_COLLECTIONS) {
     await fetchCollectionInfo();
   }
-
   if (db.FETCH_TOKENS) {
     await executeAndMeasureTime(getTokens, [addresses], 'fetchTokens');
   }
-
   if (db.FETCH_METADATA_URL) {
     await executeAndMeasureTime(getMetadataURL, [addresses], 'fetchMetadataURL');
   }
-
   if (db.FETCH_METADATA) {
     await executeAndMeasureTime(getMetadataFromURL, [], 'fetchMetadata');
   }
